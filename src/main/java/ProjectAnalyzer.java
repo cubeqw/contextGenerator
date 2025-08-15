@@ -44,7 +44,7 @@ public class ProjectAnalyzer {
     }
 
     public static void main(String[] args) {
-        if (args.length > 0 && "config".equalsIgnoreCase(args[0])) {
+        if (args.length > 0 && "--config".equalsIgnoreCase(args[0])) {
             createDefaultConfig();
             System.out.println("Configuration file '" + CONFIG_FILENAME + "' created.");
             return;
