@@ -89,26 +89,34 @@ public class ProjectAnalyzer {
     }
 
     private static void createDefaultConfig() {
-        Config defaultConfig = new Config();
-        // Ensure default exclusions are in the template
-        defaultConfig.getExcludeNames().addAll(Arrays.asList(".git", ".idea", OUTPUT_FILENAME, CONFIG_FILENAME));
+        // Настраиваем YAML для красивого форматирования списков
+        org.yaml.snakeyaml.DumperOptions options = new org.yaml.snakeyaml.DumperOptions();
+        options.setDefaultFlowStyle(org.yaml.snakeyaml.DumperOptions.FlowStyle.BLOCK);
+        options.setIndent(2);
+        Yaml yaml = new Yaml(options);
 
-        Yaml yaml = new Yaml();
         try (FileWriter writer = new FileWriter(CONFIG_FILENAME)) {
             writer.write("# File extensions to include in the analysis (including the dot)\n");
             writer.write("# An empty list means all files are included.\n");
-            writer.write("includeExtensions: " + yaml.dump(new ArrayList<>(defaultConfig.getIncludeExtensions())).trim() + "\n");
+            // Создаем пустой список для includeExtensions
+            writer.write("includeExtensions: " + yaml.dump(new ArrayList<>()).trim() + "\n");
 
             writer.write("\n# File or directory names to ignore (including hidden items starting with '.')\n");
-            writer.write("excludeNames: " + yaml.dump(new ArrayList<>(defaultConfig.getExcludeNames())).trim() + "\n");
-            // Example items are already in the set, so they will be dumped
+            // Создаем список excludeNames с нужными значениями
+            List<String> defaultExcludes = Arrays.asList(
+                    ".git",
+                    "context_config.yaml",
+                    ".idea",
+                    "project_structure.md",
+                    "README.md"
+            );
+            writer.write("excludeNames: " + yaml.dump(defaultExcludes).trim() + "\n");
 
         } catch (IOException e) {
             System.err.println("Error creating configuration file: " + e.getMessage());
             System.exit(1);
         }
     }
-
     private static Config loadConfig() {
         Path configPath = Paths.get(CONFIG_FILENAME);
         if (!Files.exists(configPath)) {
@@ -191,7 +199,7 @@ public class ProjectAnalyzer {
                     String fileName = entry.getFileName().toString();
                     String extension = "";
                     int lastDotIndex = fileName.lastIndexOf('.');
-                    if (lastDotIndex > 0) {
+                    if (lastDotIndex >= 0) {
                         extension = fileName.substring(lastDotIndex).toLowerCase();
                     } else {
                         extension = "";
