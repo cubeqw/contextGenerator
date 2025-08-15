@@ -1,40 +1,62 @@
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.Constructor;
+
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.*;
 
 public class ProjectAnalyzer {
 
     private static final String OUTPUT_FILENAME = "project_structure.md";
-    private static final Set<String> EXTENSIONS_TO_INCLUDE = new HashSet<>();
-    static {
-        EXTENSIONS_TO_INCLUDE.add(".java");
-        EXTENSIONS_TO_INCLUDE.add(".kt");
-        EXTENSIONS_TO_INCLUDE.add(".xml");
-        EXTENSIONS_TO_INCLUDE.add(".gradle");
-        EXTENSIONS_TO_INCLUDE.add(".kts");
-//        EXTENSIONS_TO_INCLUDE.add(".md");
-        EXTENSIONS_TO_INCLUDE.add("");
-    }
+    private static final String CONFIG_FILENAME = "context_config.yaml";
 
-    private static final Set<String> IGNORED_NAMES = new HashSet<>();
-    static {
-        IGNORED_NAMES.add("target");
-        IGNORED_NAMES.add("build");
-        IGNORED_NAMES.add(".git");
-        IGNORED_NAMES.add(".gradle");
-        IGNORED_NAMES.add(".idea");
-        IGNORED_NAMES.add("node_modules");
+    public static class Config {
+        private Set<String> includeExtensions = new HashSet<>();
+        private Set<String> excludeNames = new HashSet<>();
+
+        public Config() {}
+
+        public Set<String> getIncludeExtensions() {
+            return includeExtensions;
+        }
+
+        public void setIncludeExtensions(Set<String> includeExtensions) {
+            this.includeExtensions = includeExtensions != null ? includeExtensions : new HashSet<>();
+        }
+
+        public Set<String> getExcludeNames() {
+            return excludeNames;
+        }
+
+        public void setExcludeNames(Set<String> excludeNames) {
+            this.excludeNames = excludeNames != null ? excludeNames : new HashSet<>();
+        }
+
+        @Override
+        public String toString() {
+            return "Config{" +
+                    "includeExtensions=" + includeExtensions +
+                    ", excludeNames=" + excludeNames +
+                    '}';
+        }
     }
 
     public static void main(String[] args) {
-        if (args.length != 1) {
-            System.err.println("Usage: java ProjectAnalyzer <project_root_path>");
-            System.exit(1);
+        if (args.length > 0 && "config".equalsIgnoreCase(args[0])) {
+            createDefaultConfig();
+            System.out.println("Configuration file '" + CONFIG_FILENAME + "' created.");
+            return;
         }
 
-        Path projectRoot = Paths.get(args[0]);
+        Config config = loadConfig();
+
+        String path = ".";
+        if (args.length > 0) {
+            path = args[0];
+        }
+        Path projectRoot = Paths.get(path).toAbsolutePath().normalize();
 
         if (!Files.exists(projectRoot) || !Files.isDirectory(projectRoot)) {
             System.err.println("Error: Provided path '" + projectRoot.toAbsolutePath() + "' is not a valid directory.");
@@ -43,15 +65,20 @@ public class ProjectAnalyzer {
 
         Path outputFile = projectRoot.resolve(OUTPUT_FILENAME);
 
-        try (BufferedWriter writer = Files.newBufferedWriter(outputFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
+        try (BufferedWriter writer = Files.newBufferedWriter(outputFile, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
 
             writer.write("# Project structure overview\n");
+
+            writer.write("\n<!-- Configuration used for this analysis:\n");
+            writer.write("Include Extensions: " + config.getIncludeExtensions() + "\n");
+            writer.write("Exclude Names: " + config.getExcludeNames() + "\n");
+            writer.write("-->\n\n");
+
+            writer.write("```\n");
+            generateTree(writer, projectRoot, projectRoot, 0, config);
             writer.write("```\n");
 
-            generateTree(writer, projectRoot, projectRoot, 0);
-            writer.write("```\n");
-
-            processFiles(writer, projectRoot, projectRoot);
+            processFiles(writer, projectRoot, projectRoot, config);
 
             System.out.println("Analysis complete. Output written to: " + outputFile.toAbsolutePath());
 
@@ -61,10 +88,65 @@ public class ProjectAnalyzer {
         }
     }
 
-    private static void generateTree(BufferedWriter writer, Path currentPath, Path rootPath, int depth) throws IOException {
+    private static void createDefaultConfig() {
+        Config defaultConfig = new Config();
+        // Ensure default exclusions are in the template
+        defaultConfig.getExcludeNames().addAll(Arrays.asList(".git", ".idea", OUTPUT_FILENAME, CONFIG_FILENAME));
+
+        Yaml yaml = new Yaml();
+        try (FileWriter writer = new FileWriter(CONFIG_FILENAME)) {
+            writer.write("# File extensions to include in the analysis (including the dot)\n");
+            writer.write("# An empty list means all files are included.\n");
+            writer.write("includeExtensions: " + yaml.dump(new ArrayList<>(defaultConfig.getIncludeExtensions())).trim() + "\n");
+
+            writer.write("\n# File or directory names to ignore (including hidden items starting with '.')\n");
+            writer.write("excludeNames: " + yaml.dump(new ArrayList<>(defaultConfig.getExcludeNames())).trim() + "\n");
+            // Example items are already in the set, so they will be dumped
+
+        } catch (IOException e) {
+            System.err.println("Error creating configuration file: " + e.getMessage());
+            System.exit(1);
+        }
+    }
+
+    private static Config loadConfig() {
+        Path configPath = Paths.get(CONFIG_FILENAME);
+        if (!Files.exists(configPath)) {
+            System.out.println("Configuration file '" + CONFIG_FILENAME + "' not found. Using default settings (all lists are empty).");
+            Config defaultConfig = new Config();
+            defaultConfig.getExcludeNames().add(OUTPUT_FILENAME);
+            return defaultConfig;
+        }
+
+        LoaderOptions loaderOptions = new LoaderOptions();
+        Constructor constructor = new Constructor(Config.class, loaderOptions);
+        Yaml yaml = new Yaml(constructor);
+
+        try (InputStream inputStream = Files.newInputStream(configPath)) {
+            Config config = yaml.load(inputStream);
+            if (config == null) {
+                System.out.println("Configuration file '" + CONFIG_FILENAME + "' is empty. Using default settings.");
+                config = new Config();
+            }
+            System.out.println("Configuration loaded from '" + CONFIG_FILENAME + "'.");
+
+            if (config.getIncludeExtensions() == null) config.setIncludeExtensions(new HashSet<>());
+            if (config.getExcludeNames() == null) config.setExcludeNames(new HashSet<>());
+            config.getExcludeNames().add(OUTPUT_FILENAME);
+            return config;
+        } catch (Exception e) {
+            System.err.println("Error reading/parsing configuration file: " + e.getMessage());
+            System.err.println("Using default settings.");
+            Config defaultConfig = new Config();
+            defaultConfig.getExcludeNames().add(OUTPUT_FILENAME);
+            return defaultConfig;
+        }
+    }
+
+    private static void generateTree(BufferedWriter writer, Path currentPath, Path rootPath, int depth, Config config) throws IOException {
         try {
             var entries = Files.list(currentPath)
-                    .filter(p -> !shouldIgnore(p))
+                    .filter(p -> !shouldIgnore(p, config))
                     .sorted((p1, p2) -> {
                         if (Files.isDirectory(p1) && Files.isRegularFile(p2)) return -1;
                         if (Files.isRegularFile(p1) && Files.isDirectory(p2)) return 1;
@@ -76,13 +158,9 @@ public class ProjectAnalyzer {
                 String indent = "    ".repeat(depth);
                 String name = entry.getFileName().toString();
 
-                if (entry.equals(rootPath.resolve(OUTPUT_FILENAME))) {
-                    continue;
-                }
-
                 if (Files.isDirectory(entry)) {
-                    writer.write(indent + "└── " + name + "/\n");
-                    generateTree(writer, entry, rootPath, depth + 1);
+                    writer.write(indent + "├── " + name + "/\n");
+                    generateTree(writer, entry, rootPath, depth + 1, config);
                 } else {
                     long size;
                     try {
@@ -90,36 +168,43 @@ public class ProjectAnalyzer {
                     } catch (IOException e) {
                         size = 0;
                     }
-                    writer.write(indent + "└── " + name + " [" + size + " chars]\n");
+                    writer.write(indent + "├── " + name + " [" + size + " chars]\n");
                 }
             }
         } catch (IOException e) {
             String indent = "    ".repeat(depth);
-            writer.write(indent + "└── [inaccessible directory]\n");
+            writer.write(indent + "├── [inaccessible directory]\n");
         }
     }
 
-    private static void processFiles(BufferedWriter writer, Path currentPath, Path rootPath) throws IOException {
+    private static void processFiles(BufferedWriter writer, Path currentPath, Path rootPath, Config config) throws IOException {
         try {
             var entries = Files.list(currentPath)
-                    .filter(p -> !shouldIgnore(p))
+                    .filter(p -> !shouldIgnore(p, config))
                     .sorted()
                     .toList();
 
             for (Path entry : entries) {
                 if (Files.isDirectory(entry)) {
-                    processFiles(writer, entry, rootPath);
+                    processFiles(writer, entry, rootPath, config);
                 } else {
                     String fileName = entry.getFileName().toString();
                     String extension = "";
                     int lastDotIndex = fileName.lastIndexOf('.');
                     if (lastDotIndex > 0) {
                         extension = fileName.substring(lastDotIndex).toLowerCase();
-                    } else if (lastDotIndex == -1) {
+                    } else {
                         extension = "";
                     }
 
-                    if (EXTENSIONS_TO_INCLUDE.contains(extension)) {
+                    boolean shouldInclude;
+                    if (config.getIncludeExtensions().isEmpty()) {
+                        shouldInclude = true;
+                    } else {
+                        shouldInclude = config.getIncludeExtensions().contains(extension);
+                    }
+
+                    if (shouldInclude) {
                         appendFileContent(writer, entry, rootPath);
                     }
                 }
@@ -135,7 +220,7 @@ public class ProjectAnalyzer {
 
             writer.write("\n**Path: `" + relativePath + "`**\n");
             writer.write("```" + detectCodeBlockType(file) + "\n");
-            try (BufferedReader reader = Files.newBufferedReader(file)) {
+            try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     writer.write(line);
@@ -153,9 +238,7 @@ public class ProjectAnalyzer {
         String fileName = file.getFileName().toString().toLowerCase();
         if (fileName.endsWith(".xml")) {
             return "xml";
-        } else if (fileName.endsWith(".gradle")) {
-            return "gradle";
-        } else if (fileName.endsWith(".kts")) {
+        } else if (fileName.endsWith(".gradle") || fileName.endsWith(".kts")) {
             return "kotlin";
         } else if (fileName.endsWith(".java")) {
             return "java";
@@ -163,24 +246,25 @@ public class ProjectAnalyzer {
             return "kotlin";
         } else if (fileName.endsWith(".md")) {
             return "markdown";
-        }
-        if (fileName.equals("license") || fileName.equals("readme")) {
-            return "";
+        } else if (fileName.endsWith(".js")) {
+            return "javascript";
+        } else if (fileName.endsWith(".php")) {
+            return "php";
         }
         return "";
     }
 
-    private static boolean shouldIgnore(Path path) {
+    private static boolean shouldIgnore(Path path, Config config) {
         String name = path.getFileName().toString();
-        if (path.endsWith(OUTPUT_FILENAME)) {
+
+        if (config.getExcludeNames().contains(name)) {
             return true;
         }
-        if (IGNORED_NAMES.contains(name)) {
-            return true;
-        }
+
         if (name.startsWith(".")) {
             return true;
         }
+
         return false;
     }
 }
