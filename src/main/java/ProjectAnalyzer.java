@@ -89,7 +89,6 @@ public class ProjectAnalyzer {
     }
 
     private static void createDefaultConfig() {
-        // Настраиваем YAML для красивого форматирования списков
         org.yaml.snakeyaml.DumperOptions options = new org.yaml.snakeyaml.DumperOptions();
         options.setDefaultFlowStyle(org.yaml.snakeyaml.DumperOptions.FlowStyle.BLOCK);
         options.setIndent(2);
@@ -102,16 +101,17 @@ public class ProjectAnalyzer {
             writer.write("includeExtensions: " + yaml.dump(new ArrayList<>()).trim() + "\n");
 
             writer.write("\n# File or directory names to ignore (including hidden items starting with '.')\n");
-            // Создаем список excludeNames с нужными значениями
             List<String> defaultExcludes = Arrays.asList(
-                    ".git",
-                    "context_config.yaml",
-                    ".idea",
-                    "project_structure.md",
-                    "README.md"
+                    "- \".git\"",
+                    "- \"context_config.yaml\"",
+                    "- \".idea\"",
+                    "- \"project_structure.md\"",
+                    "- \"README.md\""
             );
-            writer.write("excludeNames: " + yaml.dump(defaultExcludes).trim() + "\n");
-
+            writer.write("excludeNames:\n");
+            for (int i = 0; i < defaultExcludes.toArray().length; i++) {
+                writer.write(defaultExcludes.get(i)+"\n");
+            }
         } catch (IOException e) {
             System.err.println("Error creating configuration file: " + e.getMessage());
             System.exit(1);
@@ -226,9 +226,10 @@ public class ProjectAnalyzer {
         try {
             String relativePath = rootPath.relativize(file).toString().replace("\\", "/");
 
-            writer.write("\n**Path: `" + relativePath + "`**\n");
-            writer.write("```" + detectCodeBlockType(file) + "\n");
+
             try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                writer.write("\n**Path: `" + relativePath + "`**\n");
+                writer.write("```" + detectCodeBlockType(file) + "\n");
                 String line;
                 while ((line = reader.readLine()) != null) {
                     writer.write(line);
@@ -237,8 +238,7 @@ public class ProjectAnalyzer {
             }
             writer.write("```\n");
         } catch (IOException e) {
-            writer.write("\n**Path: `" + rootPath.relativize(file).toString().replace("\\", "/") + "`**\n");
-            writer.write("```\n[Error reading file: " + e.getMessage() + "]\n```\n");
+
         }
     }
 
