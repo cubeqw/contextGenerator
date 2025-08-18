@@ -21,7 +21,7 @@ This Java tool analyzes a project directory, generating a single Markdown file (
 
 ### Installation
 
-1.  Download the latest `context.jar` file from the [Releases](https://github.com/your-username/context/releases) section.
+1.  Download the latest `context.jar` file from the [Releases](https://github.com/cubeqw/contextGenerator/releases) section.
 2.  *(Optional)* Place the `context.jar` file in a directory included in your system's `PATH` for easier execution, or note its location.
 
 ### Usage
