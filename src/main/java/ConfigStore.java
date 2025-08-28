@@ -85,5 +85,49 @@ public class ConfigStore {
             return null;
         }
     }
-}
 
+    public static java.util.List<String> listProfiles() {
+        Path dir = getStoreDir();
+        java.util.List<String> names = new java.util.ArrayList<>();
+        if (!Files.isDirectory(dir)) {
+            return names;
+        }
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.y{a,}ml")) {
+            // Note: glob with {} may not work on all FS providers; fallback below
+            for (Path p : ds) {
+                String n = p.getFileName().toString();
+                if (n.endsWith(".yaml")) n = n.substring(0, n.length() - 5);
+                else if (n.endsWith(".yml")) n = n.substring(0, n.length() - 4);
+                names.add(n);
+            }
+        } catch (IOException e) {
+            // Fallback: manual scan
+            try (DirectoryStream<Path> all = Files.newDirectoryStream(dir)) {
+                for (Path p : all) {
+                    String n = p.getFileName().toString();
+                    if (n.endsWith(".yaml")) names.add(n.substring(0, n.length() - 5));
+                    else if (n.endsWith(".yml")) names.add(n.substring(0, n.length() - 4));
+                }
+            } catch (IOException ignored) {}
+        }
+        java.util.Collections.sort(names);
+        return names;
+        }
+
+    public static boolean deleteProfile(String name) {
+        Path path = pathForName(name);
+        try {
+            if (Files.exists(path)) {
+                Files.delete(path);
+                System.out.println("Deleted profile: " + name);
+                return true;
+            } else {
+                System.err.println("Profile not found: " + name);
+                return false;
+            }
+        } catch (IOException e) {
+            System.err.println("Failed to delete profile: " + e.getMessage());
+            return false;
+        }
+    }
+}

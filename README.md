@@ -59,6 +59,10 @@ Open a terminal or command prompt.
   - `ctxgen --use php`
   - Optional path can follow: `ctxgen --use php /path/to/project`
   - The selected profile is also written to `./context_config.yaml` (overwrites if exists).
+- List all saved profiles:
+  - `ctxgen --list`
+- Delete a profile:
+  - `ctxgen --delete php`
 3.  **(Optional) Generate a default configuration file:**
     ```bash
     java -jar /path/to/context.jar --config

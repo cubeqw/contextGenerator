@@ -61,6 +61,25 @@ public class ProjectAnalyzer {
             return;
         }
 
+        // List saved profiles
+        if (args.length > 0 && "--list".equalsIgnoreCase(args[0])) {
+            var profiles = ConfigStore.listProfiles();
+            if (profiles.isEmpty()) {
+                System.out.println("No profiles saved. Create one with: ctxgen --save <name>");
+            } else {
+                System.out.println("Profiles (" + profiles.size() + "):");
+                for (String n : profiles) System.out.println("- " + n);
+            }
+            return;
+        }
+
+        // Delete saved profile
+        if (args.length > 1 && "--delete".equalsIgnoreCase(args[0])) {
+            String name = args[1];
+            ConfigStore.deleteProfile(name);
+            return;
+        }
+
         // Save named profile from current context_config.yaml
         if (args.length > 1 && "--save".equalsIgnoreCase(args[0])) {
             String name = args[1];
