@@ -21,20 +21,32 @@ This Java tool analyzes a project directory, generating a single Markdown file (
 
 ### Installation
 
-1.  Download the latest `context.jar` file from the [Releases](https://github.com/cubeqw/contextGenerator/releases) section.
-2.  *(Optional)* Place the `context.jar` file in a directory included in your system's `PATH` for easier execution, or note its location.
+Option A — one‑shot installer (recommended):
+
+```bash
+java -jar target/context-1.0-SNAPSHOT.jar --install
+```
+
+This creates a `ctxgen` launcher:
+- Windows: installs `ctxgen.cmd` and `ctxgen.ps1` into a PATH directory (or `%USERPROFILE%\bin`). For PowerShell, execution policy may require `Set-ExecutionPolicy RemoteSigned`.
+- Linux/macOS: installs to `/usr/local/bin/ctxgen` or falls back to `~/.local/bin/ctxgen` (ensure it’s on PATH).
+
+Option B — run the JAR directly: download the latest release and use `java -jar /path/to/context.jar`.
 
 ### Usage
 
 Open a terminal or command prompt.
 
 1.  **Navigate** to the root directory of the project you want to analyze, or prepare to specify the path.
-2.  **Run the JAR:**
+2.  **Run the tool:**
     ```bash
-    # Analyze the current directory
-    java -jar /path/to/context.jar
+    # Installed launcher (after --install)
+    ctxgen --config     # generate default config in current folder
+    ctxgen              # analyze current directory
+    ctxgen /path/to/project
 
-    # Analyze a specific directory (provide the path as an argument)
+    # Or via JAR directly
+    java -jar /path/to/context.jar
     java -jar /path/to/context.jar /path/to/your/project/directory
     ```
 3.  **(Optional) Generate a default configuration file:**
@@ -50,31 +62,30 @@ Open a terminal or command prompt.
 
 ### Configuration (`context_config.yaml`)
 
-The `context_config.yaml` file allows you to control the analysis:
+The `context_config.yaml` file controls which files are included. There are four lists:
 
-*   `includeExtensions`: A list of file extensions to include in the output content (e.g., `- ".java"`, `- ".xml"`). If this list is empty, *all* file contents are included (subject to `excludeNames`).
-*   `excludeNames`: A list of file or directory names (including hidden ones like `.git`) to ignore completely during the analysis (e.g., `- ".git"`, `- "target"`).
+* `excludeNamesOrPaths`: names or relative paths to exclude (e.g., `.git`, `target`, `docs/assets`).
+* `excludeExtensions`: extensions to exclude (with dot).
+* `includeNamesOrPaths`: names or relative paths to include.
+* `includeExtensions`: extensions to include (with dot).
+
+Precedence: if any exclude-list is non‑empty, include‑lists are ignored. Otherwise, include‑lists control selection (empty include‑lists mean include all).
 
 Example `context_config.yaml`:
 ```yaml
-# File extensions to include in the analysis (including the dot)
-# An empty list means all files are included.
-includeExtensions:
-  - ".java"
-  - ".xml"
-  - ".md"
-
-# File or directory names to ignore (including hidden items starting with '.')
-excludeNames:
+includeExtensions: []     # e.g., [".java", ".xml", ".md"]
+includeNamesOrPaths: []   # e.g., ["src/main/java", "README.md"]
+excludeExtensions: []     # e.g., [".class", ".bin"]
+excludeNamesOrPaths:
   - ".git"
-  - "context_config.yaml"
   - ".idea"
+  - "context_config.yaml"
   - "project_structure.md"
   - "README.md"
   - "target"
   - "out"
 ```
-Note: The output file project_structure.md is always added to the internal exclusion list automatically. 
+Note: The output file `project_structure.md` is always excluded automatically.
 Building from Source (Optional) 
 
 If you prefer to build the JAR yourself: 
