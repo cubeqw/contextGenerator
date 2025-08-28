@@ -7,45 +7,89 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
-public class ProjectAnalyzer {
+public class
+ProjectAnalyzer {
 
     private static final String OUTPUT_FILENAME = "project_structure.md";
     private static final String CONFIG_FILENAME = "context_config.yaml";
 
     public static class Config {
+        // Include lists
         private Set<String> includeExtensions = new HashSet<>();
+        private Set<String> includeNamesOrPaths = new HashSet<>();
+
+        // Exclude lists
+        private Set<String> excludeExtensions = new HashSet<>();
+        private Set<String> excludeNamesOrPaths = new HashSet<>();
+
+        // Backward-compat: old key "excludeNames" (mapped to excludeNamesOrPaths)
         private Set<String> excludeNames = new HashSet<>();
 
         public Config() {}
 
-        public Set<String> getIncludeExtensions() {
-            return includeExtensions;
-        }
+        public Set<String> getIncludeExtensions() { return includeExtensions; }
+        public void setIncludeExtensions(Set<String> includeExtensions) { this.includeExtensions = includeExtensions != null ? includeExtensions : new HashSet<>(); }
 
-        public void setIncludeExtensions(Set<String> includeExtensions) {
-            this.includeExtensions = includeExtensions != null ? includeExtensions : new HashSet<>();
-        }
+        public Set<String> getIncludeNamesOrPaths() { return includeNamesOrPaths; }
+        public void setIncludeNamesOrPaths(Set<String> includeNamesOrPaths) { this.includeNamesOrPaths = includeNamesOrPaths != null ? includeNamesOrPaths : new HashSet<>(); }
 
-        public Set<String> getExcludeNames() {
-            return excludeNames;
-        }
+        public Set<String> getExcludeExtensions() { return excludeExtensions; }
+        public void setExcludeExtensions(Set<String> excludeExtensions) { this.excludeExtensions = excludeExtensions != null ? excludeExtensions : new HashSet<>(); }
 
-        public void setExcludeNames(Set<String> excludeNames) {
-            this.excludeNames = excludeNames != null ? excludeNames : new HashSet<>();
-        }
+        public Set<String> getExcludeNamesOrPaths() { return excludeNamesOrPaths; }
+        public void setExcludeNamesOrPaths(Set<String> excludeNamesOrPaths) { this.excludeNamesOrPaths = excludeNamesOrPaths != null ? excludeNamesOrPaths : new HashSet<>(); }
+
+        // Backward-compat accessors
+        public Set<String> getExcludeNames() { return excludeNames; }
+        public void setExcludeNames(Set<String> excludeNames) { this.excludeNames = excludeNames != null ? excludeNames : new HashSet<>(); }
 
         @Override
         public String toString() {
             return "Config{" +
                     "includeExtensions=" + includeExtensions +
-                    ", excludeNames=" + excludeNames +
+                    ", includeNamesOrPaths=" + includeNamesOrPaths +
+                    ", excludeExtensions=" + excludeExtensions +
+                    ", excludeNamesOrPaths=" + excludeNamesOrPaths +
                     '}';
+        }
+    }
+
+    // New default config generator with 4 lists and precedence rules
+    private static void createDefaultConfigV2() {
+        try (FileWriter writer = new FileWriter(CONFIG_FILENAME)) {
+            writer.write("# Include lists are ignored if any exclude list is non-empty.\n");
+            writer.write("# Paths are relative to analysis root and use forward slashes.\n\n");
+
+            writer.write("# Files to include by extension (with dot), empty = all\n");
+            writer.write("includeExtensions:\n");
+            writer.write("  # - \".java\"\n");
+
+            writer.write("\n# Files or directories to include by name or relative path\n");
+            writer.write("includeNamesOrPaths:\n");
+            writer.write("  # - \"src/main/java\"\n");
+
+            writer.write("\n# Files to exclude by extension (with dot)\n");
+            writer.write("excludeExtensions:\n");
+            writer.write("  # - \".class\"\n");
+
+            writer.write("\n# Files or directories to exclude by name or relative path\n");
+            writer.write("excludeNamesOrPaths:\n");
+            writer.write("  - \".git\"\n");
+            writer.write("  - \".idea\"\n");
+            writer.write("  - \"context_config.yaml\"\n");
+            writer.write("  - \"project_structure.md\"\n");
+            writer.write("  - \"README.md\"\n");
+            writer.write("  - \"target\"\n");
+            writer.write("  - \"out\"\n");
+        } catch (IOException e) {
+            System.err.println("Error creating configuration file: " + e.getMessage());
+            System.exit(1);
         }
     }
 
     public static void main(String[] args) {
         if (args.length > 0 && "--config".equalsIgnoreCase(args[0])) {
-            createDefaultConfig();
+            createDefaultConfigV2();
             System.out.println("Configuration file '" + CONFIG_FILENAME + "' created.");
             return;
         }
@@ -71,7 +115,9 @@ public class ProjectAnalyzer {
 
             writer.write("\n<!-- Configuration used for this analysis:\n");
             writer.write("Include Extensions: " + config.getIncludeExtensions() + "\n");
-            writer.write("Exclude Names: " + config.getExcludeNames() + "\n");
+            writer.write("Include Names/Paths: " + config.getIncludeNamesOrPaths() + "\n");
+            writer.write("Exclude Extensions: " + config.getExcludeExtensions() + "\n");
+            writer.write("Exclude Names/Paths: " + config.getExcludeNamesOrPaths() + "\n");
             writer.write("-->\n\n");
 
             writer.write("```\n");
@@ -139,14 +185,20 @@ public class ProjectAnalyzer {
             System.out.println("Configuration loaded from '" + CONFIG_FILENAME + "'.");
 
             if (config.getIncludeExtensions() == null) config.setIncludeExtensions(new HashSet<>());
-            if (config.getExcludeNames() == null) config.setExcludeNames(new HashSet<>());
-            config.getExcludeNames().add(OUTPUT_FILENAME);
+            if (config.getIncludeNamesOrPaths() == null) config.setIncludeNamesOrPaths(new HashSet<>());
+            if (config.getExcludeExtensions() == null) config.setExcludeExtensions(new HashSet<>());
+            if (config.getExcludeNamesOrPaths() == null) config.setExcludeNamesOrPaths(new HashSet<>());
+            // Merge backward-compat key excludeNames -> excludeNamesOrPaths
+            if (config.getExcludeNames() != null && !config.getExcludeNames().isEmpty()) {
+                config.getExcludeNamesOrPaths().addAll(config.getExcludeNames());
+            }
+            config.getExcludeNamesOrPaths().add(OUTPUT_FILENAME);
             return config;
         } catch (Exception e) {
             System.err.println("Error reading/parsing configuration file: " + e.getMessage());
             System.err.println("Using default settings.");
             Config defaultConfig = new Config();
-            defaultConfig.getExcludeNames().add(OUTPUT_FILENAME);
+            defaultConfig.getExcludeNamesOrPaths().add(OUTPUT_FILENAME);
             return defaultConfig;
         }
     }
@@ -154,7 +206,7 @@ public class ProjectAnalyzer {
     private static void generateTree(BufferedWriter writer, Path currentPath, Path rootPath, int depth, Config config) throws IOException {
         try {
             var entries = Files.list(currentPath)
-                    .filter(p -> !shouldIgnore(p, config))
+                    .filter(p -> !shouldIgnore(p, rootPath, config))
                     .sorted((p1, p2) -> {
                         if (Files.isDirectory(p1) && Files.isRegularFile(p2)) return -1;
                         if (Files.isRegularFile(p1) && Files.isDirectory(p2)) return 1;
@@ -188,7 +240,7 @@ public class ProjectAnalyzer {
     private static void processFiles(BufferedWriter writer, Path currentPath, Path rootPath, Config config) throws IOException {
         try {
             var entries = Files.list(currentPath)
-                    .filter(p -> !shouldIgnore(p, config))
+                    .filter(p -> !shouldIgnore(p, rootPath, config))
                     .sorted()
                     .toList();
 
@@ -196,23 +248,7 @@ public class ProjectAnalyzer {
                 if (Files.isDirectory(entry)) {
                     processFiles(writer, entry, rootPath, config);
                 } else {
-                    String fileName = entry.getFileName().toString();
-                    String extension = "";
-                    int lastDotIndex = fileName.lastIndexOf('.');
-                    if (lastDotIndex >= 0) {
-                        extension = fileName.substring(lastDotIndex).toLowerCase();
-                    } else {
-                        extension = "";
-                    }
-
-                    boolean shouldInclude;
-                    if (config.getIncludeExtensions().isEmpty()) {
-                        shouldInclude = true;
-                    } else {
-                        shouldInclude = config.getIncludeExtensions().contains(extension);
-                    }
-
-                    if (shouldInclude) {
+                    if (shouldIncludeFile(entry, rootPath, config)) {
                         appendFileContent(writer, entry, rootPath);
                     }
                 }
@@ -262,17 +298,68 @@ public class ProjectAnalyzer {
         return "";
     }
 
-    private static boolean shouldIgnore(Path path, Config config) {
+    private static boolean shouldIgnore(Path path, Path rootPath, Config config) {
         String name = path.getFileName().toString();
+        String rel = relativizeSafe(rootPath, path);
 
-        if (config.getExcludeNames().contains(name)) {
-            return true;
+        // Do not auto-ignore hidden dot-files/directories; honor config only
+
+        // Exclude lists take precedence (mutually exclusive with include lists)
+        boolean excludeMode = !config.getExcludeExtensions().isEmpty() || !config.getExcludeNamesOrPaths().isEmpty();
+        if (excludeMode) {
+            // Ignore if matched by exclude rules
+            if (matchesNameOrPath(rel, name, config.getExcludeNamesOrPaths())) return true;
+            String ext = extensionOf(name);
+            if (!ext.isEmpty() && config.getExcludeExtensions().contains(ext)) return true;
+            return false;
         }
 
-        if (name.startsWith(".")) {
-            return true;
-        }
-
+        // If no excludes configured, do not ignore here; file inclusion handled separately.
         return false;
+    }
+
+    private static boolean shouldIncludeFile(Path file, Path rootPath, Config config) {
+        String name = file.getFileName().toString();
+        String rel = relativizeSafe(rootPath, file);
+
+        // If exclude mode active, include everything not excluded (already filtered in shouldIgnore)
+        boolean excludeMode = !config.getExcludeExtensions().isEmpty() || !config.getExcludeNamesOrPaths().isEmpty();
+        if (excludeMode) return true;
+
+        // If include lists empty, include all
+        boolean hasInclude = !config.getIncludeExtensions().isEmpty() || !config.getIncludeNamesOrPaths().isEmpty();
+        if (!hasInclude) return true;
+
+        // Include if matches include rules
+        if (matchesNameOrPath(rel, name, config.getIncludeNamesOrPaths())) return true;
+        String ext = extensionOf(name);
+        return !ext.isEmpty() && config.getIncludeExtensions().contains(ext);
+    }
+
+    private static boolean matchesNameOrPath(String relativePath, String name, Set<String> patterns) {
+        if (patterns == null || patterns.isEmpty()) return false;
+        if (patterns.contains(name)) return true;
+        String rel = relativePath; // already '/' normalized by relativizeSafe
+        if (patterns.contains(rel)) return true;
+        for (String p : patterns) {
+            if (p == null || p.isEmpty()) continue;
+            String norm = p.replace("\\", "/");
+            if (rel.equals(norm)) return true;
+            if (rel.startsWith(norm.endsWith("/") ? norm : norm + "/")) return true;
+        }
+        return false;
+    }
+
+    private static String relativizeSafe(Path root, Path path) {
+        try {
+            return root.relativize(path.toAbsolutePath().normalize()).toString().replace("\\", "/");
+        } catch (Exception e) {
+            return path.getFileName().toString();
+        }
+    }
+
+    private static String extensionOf(String fileName) {
+        int idx = fileName.lastIndexOf('.');
+        return idx >= 0 ? fileName.substring(idx).toLowerCase() : "";
     }
 }
