@@ -49,6 +49,16 @@ Open a terminal or command prompt.
     java -jar /path/to/context.jar
     java -jar /path/to/context.jar /path/to/your/project/directory
     ```
+
+#### Profiles (save and reuse configs)
+
+- Save current `context_config.yaml` as profile:
+  - `ctxgen --save php`
+  - Stores under user config directory (e.g., `%APPDATA%\ctxgen\php.yaml`, `~/.config/ctxgen/php.yaml`, or `~/Library/Application Support/ctxgen/php.yaml`).
+- Use a saved profile for analysis:
+  - `ctxgen --use php`
+  - Optional path can follow: `ctxgen --use php /path/to/project`
+  - The selected profile is also written to `./context_config.yaml` (overwrites if exists).
 3.  **(Optional) Generate a default configuration file:**
     ```bash
     java -jar /path/to/context.jar --config

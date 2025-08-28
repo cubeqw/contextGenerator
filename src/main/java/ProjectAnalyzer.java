@@ -61,11 +61,46 @@ public class ProjectAnalyzer {
             return;
         }
 
-        AnalyzerConfig config = loadConfig();
+        // Save named profile from current context_config.yaml
+        if (args.length > 1 && "--save".equalsIgnoreCase(args[0])) {
+            String name = args[1];
+            boolean ok = ConfigStore.saveFrom(Paths.get(CONFIG_FILENAME), name);
+            if (!ok) {
+                System.err.println("Nothing saved. Ensure '" + CONFIG_FILENAME + "' exists in current directory.");
+            }
+            return;
+        }
+
+        // Use named profile for this run
+        AnalyzerConfig config = null;
+        String profileName = null;
+        int argIndex = 0;
+        if (args.length > 1 && "--use".equalsIgnoreCase(args[0])) {
+            profileName = args[1];
+            config = ConfigStore.loadNamed(profileName);
+            if (config == null) {
+                System.err.println("Cannot continue without a valid profile.");
+                return;
+            }
+            // also materialize profile into current directory as context_config.yaml
+            try {
+                Path src = ConfigStore.pathForName(profileName);
+                Files.copy(src, Paths.get(CONFIG_FILENAME), StandardCopyOption.REPLACE_EXISTING);
+                System.out.println("Wrote profile to ./" + CONFIG_FILENAME + " (from '" + profileName + "').");
+            } catch (Exception e) {
+                System.out.println("Profile loaded, but failed to copy to ./" + CONFIG_FILENAME + ": " + e.getMessage());
+            }
+            argIndex = 2; // optional path may follow
+        }
+
+        if (config == null) {
+            config = loadConfig();
+        }
 
         String path = ".";
-        if (args.length > 0) {
-            path = args[0];
+        if (args.length > argIndex) {
+            // treat the next arg as the project path
+            path = args[argIndex];
         }
         Path projectRoot = Paths.get(path).toAbsolutePath().normalize();
 
@@ -81,6 +116,9 @@ public class ProjectAnalyzer {
             writer.write("# Project structure overview\n");
 
             writer.write("\n<!-- Configuration used for this analysis:\n");
+            if (profileName != null) {
+                writer.write("Profile: " + profileName + "\n");
+            }
             writer.write("Include Extensions: " + config.getIncludeExtensions() + "\n");
             writer.write("Include Names/Paths: " + config.getIncludeNamesOrPaths() + "\n");
             writer.write("Exclude Extensions: " + config.getExcludeExtensions() + "\n");
