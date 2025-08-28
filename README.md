@@ -28,7 +28,7 @@ java -jar target/context-1.0-SNAPSHOT.jar --install
 ```
 
 This creates a `ctxgen` launcher:
-- Windows: installs `ctxgen.cmd` and `ctxgen.ps1` into a PATH directory (or `%USERPROFILE%\bin`). For PowerShell, execution policy may require `Set-ExecutionPolicy RemoteSigned`.
+- Windows: installs `ctxgen.cmd` into a PATH directory (or `%USERPROFILE%\bin`). PowerShell будет резолвить `.cmd` корректно без изменения ExecutionPolicy.
 - Linux/macOS: installs to `/usr/local/bin/ctxgen` or falls back to `~/.local/bin/ctxgen` (ensure it’s on PATH).
 
 Option B — run the JAR directly: download the latest release and use `java -jar /path/to/context.jar`.

@@ -6,56 +6,12 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
-import java.util.regex.Pattern;
-import java.nio.file.attribute.PosixFilePermission;
 
 public class ProjectAnalyzer {
 
     private static final String OUTPUT_FILENAME = "project_structure.md";
     private static final String CONFIG_FILENAME = "context_config.yaml";
 
-    public static class Config {
-        // Include lists
-        private Set<String> includeExtensions = new HashSet<>();
-        private Set<String> includeNamesOrPaths = new HashSet<>();
-
-        // Exclude lists
-        private Set<String> excludeExtensions = new HashSet<>();
-        private Set<String> excludeNamesOrPaths = new HashSet<>();
-
-        // Backward-compat: old key "excludeNames" (mapped to excludeNamesOrPaths)
-        private Set<String> excludeNames = new HashSet<>();
-
-        public Config() {}
-
-        public Set<String> getIncludeExtensions() { return includeExtensions; }
-        public void setIncludeExtensions(Set<String> includeExtensions) { this.includeExtensions = includeExtensions != null ? includeExtensions : new HashSet<>(); }
-
-        public Set<String> getIncludeNamesOrPaths() { return includeNamesOrPaths; }
-        public void setIncludeNamesOrPaths(Set<String> includeNamesOrPaths) { this.includeNamesOrPaths = includeNamesOrPaths != null ? includeNamesOrPaths : new HashSet<>(); }
-
-        public Set<String> getExcludeExtensions() { return excludeExtensions; }
-        public void setExcludeExtensions(Set<String> excludeExtensions) { this.excludeExtensions = excludeExtensions != null ? excludeExtensions : new HashSet<>(); }
-
-        public Set<String> getExcludeNamesOrPaths() { return excludeNamesOrPaths; }
-        public void setExcludeNamesOrPaths(Set<String> excludeNamesOrPaths) { this.excludeNamesOrPaths = excludeNamesOrPaths != null ? excludeNamesOrPaths : new HashSet<>(); }
-
-        // Backward-compat accessors
-        public Set<String> getExcludeNames() { return excludeNames; }
-        public void setExcludeNames(Set<String> excludeNames) { this.excludeNames = excludeNames != null ? excludeNames : new HashSet<>(); }
-
-        @Override
-        public String toString() {
-            return "Config{" +
-                    "includeExtensions=" + includeExtensions +
-                    ", includeNamesOrPaths=" + includeNamesOrPaths +
-                    ", excludeExtensions=" + excludeExtensions +
-                    ", excludeNamesOrPaths=" + excludeNamesOrPaths +
-                    '}';
-        }
-    }
-
-    // New default config generator with 4 lists and precedence rules
     private static void createDefaultConfigV2() {
         try (FileWriter writer = new FileWriter(CONFIG_FILENAME)) {
             writer.write("# Include lists are ignored if any exclude list is non-empty.\n");
@@ -96,7 +52,7 @@ public class ProjectAnalyzer {
         }
 
         if (args.length > 0 && "--install".equalsIgnoreCase(args[0])) {
-            boolean ok = performInstall();
+            boolean ok = Installer.performInstall();
             if (ok) {
                 System.out.println("Installed launcher 'ctxgen'. Try: ctxgen --config");
             } else {
@@ -105,7 +61,7 @@ public class ProjectAnalyzer {
             return;
         }
 
-        Config config = loadConfig();
+        AnalyzerConfig config = loadConfig();
 
         String path = ".";
         if (args.length > 0) {
@@ -145,228 +101,24 @@ public class ProjectAnalyzer {
         }
     }
 
-    private static boolean performInstall() {
-        try {
-            Path jarPath = detectExecutableJar();
-            if (jarPath == null || !Files.exists(jarPath)) {
-                System.err.println("Could not determine the executable JAR. Build the project first (mvn package) or run from JAR.");
-                return false;
-            }
-
-            String os = System.getProperty("os.name").toLowerCase();
-            if (os.contains("win")) {
-                return installOnWindows(jarPath);
-            } else {
-                return installOnUnix(jarPath);
-            }
-        } catch (Exception e) {
-            System.err.println("Install failed: " + e.getMessage());
-            return false;
-        }
-    }
-
-    private static Path detectExecutableJar() {
-        try {
-            var codeSource = ProjectAnalyzer.class.getProtectionDomain().getCodeSource();
-            if (codeSource != null) {
-                Path loc = Paths.get(codeSource.getLocation().toURI());
-                if (loc.toString().toLowerCase().endsWith(".jar")) {
-                    return loc.toAbsolutePath().normalize();
-                }
-            }
-        } catch (Exception ignored) { }
-
-        // Fallback: look for a built jar in target/
-        try {
-            Path target = Paths.get("target");
-            if (Files.isDirectory(target)) {
-                try (DirectoryStream<Path> ds = Files.newDirectoryStream(target, "*.jar")) {
-                    Path first = null;
-                    for (Path p : ds) {
-                        if (p.getFileName().toString().startsWith("context-")) return p.toAbsolutePath().normalize();
-                        if (first == null) first = p;
-                    }
-                    if (first != null) return first.toAbsolutePath().normalize();
-                }
-            }
-        } catch (IOException ignored) { }
-        return null;
-    }
-
-    private static boolean installOnWindows(Path jarPath) {
-        String wrapper = "@echo off\r\n" +
-                "setlocal\r\n" +
-                "java -jar \"" + jarPath.toString() + "\" %*\r\n" +
-                "endlocal\r\n";
-
-        String ps1 = "$jar = \"" + jarPath.toString().replace("\\", "/") + "\"\r\n" +
-                "& java -jar \"$jar\" @args\r\n";
-
-        // Try to find a writable directory already on PATH
-        String pathEnv = System.getenv("PATH");
-        Path chosenDir = null;
-        if (pathEnv != null) {
-            String[] dirs = pathEnv.split(Pattern.quote(File.pathSeparator));
-            for (String d : dirs) {
-                try {
-                    if (d == null || d.isBlank()) continue;
-                    Path dir = Paths.get(d.trim());
-                    if (!Files.isDirectory(dir)) continue;
-                    // test write permission by creating temp file
-                    Path test = dir.resolve(".ctxgen_write_test.tmp");
-                    try {
-                        Files.writeString(test, "ok", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-                        Files.deleteIfExists(test);
-                        chosenDir = dir;
-                        break;
-                    } catch (Exception ignored) { }
-                } catch (Exception ignored) { }
-            }
-        }
-
-        Path installDir;
-        boolean onPath;
-        if (chosenDir != null) {
-            installDir = chosenDir;
-            onPath = true;
-        } else {
-            // Fallback to %USERPROFILE%\bin
-            installDir = Paths.get(System.getProperty("user.home"), "bin");
-            try { Files.createDirectories(installDir); } catch (IOException ignored) {}
-            onPath = pathEnv != null && Arrays.stream(pathEnv.split(Pattern.quote(File.pathSeparator)))
-                    .map(String::trim).anyMatch(p -> p.equalsIgnoreCase(installDir.toString()));
-        }
-
-        Path cmd = installDir.resolve("ctxgen.cmd");
-        Path ps1Path = installDir.resolve("ctxgen.ps1");
-        try {
-            Files.writeString(cmd, wrapper, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            Files.writeString(ps1Path, ps1, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        } catch (IOException e) {
-            System.err.println("Failed to write wrapper at: " + cmd + ". " + e.getMessage());
-            return false;
-        }
-
-        if (!onPath) {
-            // Best-effort append to user PATH via setx
-            try {
-                String newPath = (pathEnv == null || pathEnv.isBlank()) ? installDir.toString() : pathEnv + File.pathSeparator + installDir;
-                new ProcessBuilder("cmd", "/c", "setx", "PATH", newPath).inheritIO().start().waitFor();
-                System.out.println("Added to PATH for future sessions: " + installDir);
-                System.out.println("Restart terminal or log out/in for changes to take effect.");
-            } catch (Exception e) {
-                System.out.println("Place added: " + installDir + ". If not on PATH, add it manually in Environment Variables.");
-            }
-        }
-
-        System.out.println("Windows install complete: " + cmd + " and " + ps1Path);
-        System.out.println("PowerShell note: you may need to set ExecutionPolicy to RemoteSigned for running local scripts.");
-        return true;
-    }
-
-    private static boolean installOnUnix(Path jarPath) {
-        String script = "#!/bin/sh\n" +
-                "exec java -jar \"" + jarPath.toString() + "\" \"$@\"\n";
-
-        // First try /usr/local/bin (requires sudo typically)
-        Path target = Paths.get("/usr/local/bin/ctxgen");
-        try {
-            writeExecutable(target, script);
-            System.out.println("Installed to /usr/local/bin. You can run: ctxgen --config");
-            return true;
-        } catch (Exception e) {
-            // Fallback to user-local bin
-            Path home = Paths.get(System.getProperty("user.home"));
-            Path localBin = home.resolve(".local/bin");
-            try { Files.createDirectories(localBin); } catch (IOException ignored) {}
-            target = localBin.resolve("ctxgen");
-            try {
-                writeExecutable(target, script);
-                System.out.println("Installed to " + target + ". Ensure '~/.local/bin' is in PATH.");
-                return true;
-            } catch (Exception e2) {
-                // Final fallback: ~/bin
-                Path bin = home.resolve("bin");
-                try { Files.createDirectories(bin); } catch (IOException ignored) {}
-                target = bin.resolve("ctxgen");
-                try {
-                    writeExecutable(target, script);
-                    System.out.println("Installed to " + target + ". Add it to PATH to use 'ctxgen'.");
-                    return true;
-                } catch (Exception e3) {
-                    System.err.println("Could not install wrapper: " + e3.getMessage());
-                    return false;
-                }
-            }
-        }
-    }
-
-    private static void writeExecutable(Path path, String content) throws IOException {
-        Files.writeString(path, content, StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        try {
-            // Set executable bit on POSIX systems
-            Set<PosixFilePermission> perms = EnumSet.of(
-                    PosixFilePermission.OWNER_READ,
-                    PosixFilePermission.OWNER_WRITE,
-                    PosixFilePermission.OWNER_EXECUTE,
-                    PosixFilePermission.GROUP_READ,
-                    PosixFilePermission.GROUP_EXECUTE,
-                    PosixFilePermission.OTHERS_READ,
-                    PosixFilePermission.OTHERS_EXECUTE
-            );
-            Files.setPosixFilePermissions(path, perms);
-        } catch (UnsupportedOperationException ignored) {
-            // Non-POSIX (e.g., Windows) — ignore
-        }
-    }
-
-    private static void createDefaultConfig() {
-        org.yaml.snakeyaml.DumperOptions options = new org.yaml.snakeyaml.DumperOptions();
-        options.setDefaultFlowStyle(org.yaml.snakeyaml.DumperOptions.FlowStyle.BLOCK);
-        options.setIndent(2);
-        Yaml yaml = new Yaml(options);
-
-        try (FileWriter writer = new FileWriter(CONFIG_FILENAME)) {
-            writer.write("# File extensions to include in the analysis (including the dot)\n");
-            writer.write("# An empty list means all files are included.\n");
-            // Создаем пустой список для includeExtensions
-            writer.write("includeExtensions: " + yaml.dump(new ArrayList<>()).trim() + "\n");
-
-            writer.write("\n# File or directory names to ignore (including hidden items starting with '.')\n");
-            List<String> defaultExcludes = Arrays.asList(
-                    "- \".git\"",
-                    "- \"context_config.yaml\"",
-                    "- \".idea\"",
-                    "- \"project_structure.md\"",
-                    "- \"README.md\""
-            );
-            writer.write("excludeNames:\n");
-            for (int i = 0; i < defaultExcludes.toArray().length; i++) {
-                writer.write(defaultExcludes.get(i)+"\n");
-            }
-        } catch (IOException e) {
-            System.err.println("Error creating configuration file: " + e.getMessage());
-            System.exit(1);
-        }
-    }
-    private static Config loadConfig() {
+    private static AnalyzerConfig loadConfig() {
         Path configPath = Paths.get(CONFIG_FILENAME);
         if (!Files.exists(configPath)) {
             System.out.println("Configuration file '" + CONFIG_FILENAME + "' not found. Using default settings (all lists are empty).");
-            Config defaultConfig = new Config();
-            defaultConfig.getExcludeNames().add(OUTPUT_FILENAME);
+            AnalyzerConfig defaultConfig = new AnalyzerConfig();
+            defaultConfig.getExcludeNamesOrPaths().add(OUTPUT_FILENAME);
             return defaultConfig;
         }
 
         LoaderOptions loaderOptions = new LoaderOptions();
-        Constructor constructor = new Constructor(Config.class, loaderOptions);
+        Constructor constructor = new Constructor(AnalyzerConfig.class, loaderOptions);
         Yaml yaml = new Yaml(constructor);
 
         try (InputStream inputStream = Files.newInputStream(configPath)) {
-            Config config = yaml.load(inputStream);
+            AnalyzerConfig config = yaml.load(inputStream);
             if (config == null) {
                 System.out.println("Configuration file '" + CONFIG_FILENAME + "' is empty. Using default settings.");
-                config = new Config();
+                config = new AnalyzerConfig();
             }
             System.out.println("Configuration loaded from '" + CONFIG_FILENAME + "'.");
 
@@ -383,16 +135,16 @@ public class ProjectAnalyzer {
         } catch (Exception e) {
             System.err.println("Error reading/parsing configuration file: " + e.getMessage());
             System.err.println("Using default settings.");
-            Config defaultConfig = new Config();
+            AnalyzerConfig defaultConfig = new AnalyzerConfig();
             defaultConfig.getExcludeNamesOrPaths().add(OUTPUT_FILENAME);
             return defaultConfig;
         }
     }
 
-    private static void generateTree(BufferedWriter writer, Path currentPath, Path rootPath, int depth, Config config) throws IOException {
+    private static void generateTree(BufferedWriter writer, Path currentPath, Path rootPath, int depth, AnalyzerConfig config) throws IOException {
         try {
             var entries = Files.list(currentPath)
-                    .filter(p -> !shouldIgnore(p, rootPath, config))
+                    .filter(p -> !Selection.shouldIgnore(p, rootPath, config))
                     .sorted((p1, p2) -> {
                         if (Files.isDirectory(p1) && Files.isRegularFile(p2)) return -1;
                         if (Files.isRegularFile(p1) && Files.isDirectory(p2)) return 1;
@@ -423,10 +175,10 @@ public class ProjectAnalyzer {
         }
     }
 
-    private static void processFiles(BufferedWriter writer, Path currentPath, Path rootPath, Config config) throws IOException {
+    private static void processFiles(BufferedWriter writer, Path currentPath, Path rootPath, AnalyzerConfig config) throws IOException {
         try {
             var entries = Files.list(currentPath)
-                    .filter(p -> !shouldIgnore(p, rootPath, config))
+                    .filter(p -> !Selection.shouldIgnore(p, rootPath, config))
                     .sorted()
                     .toList();
 
@@ -434,7 +186,7 @@ public class ProjectAnalyzer {
                 if (Files.isDirectory(entry)) {
                     processFiles(writer, entry, rootPath, config);
                 } else {
-                    if (shouldIncludeFile(entry, rootPath, config)) {
+                    if (Selection.shouldIncludeFile(entry, rootPath, config)) {
                         appendFileContent(writer, entry, rootPath);
                     }
                 }
@@ -482,70 +234,5 @@ public class ProjectAnalyzer {
             return "php";
         }
         return "";
-    }
-
-    private static boolean shouldIgnore(Path path, Path rootPath, Config config) {
-        String name = path.getFileName().toString();
-        String rel = relativizeSafe(rootPath, path);
-
-        // Do not auto-ignore hidden dot-files/directories; honor config only
-
-        // Exclude lists take precedence (mutually exclusive with include lists)
-        boolean excludeMode = !config.getExcludeExtensions().isEmpty() || !config.getExcludeNamesOrPaths().isEmpty();
-        if (excludeMode) {
-            // Ignore if matched by exclude rules
-            if (matchesNameOrPath(rel, name, config.getExcludeNamesOrPaths())) return true;
-            String ext = extensionOf(name);
-            if (!ext.isEmpty() && config.getExcludeExtensions().contains(ext)) return true;
-            return false;
-        }
-
-        // If no excludes configured, do not ignore here; file inclusion handled separately.
-        return false;
-    }
-
-    private static boolean shouldIncludeFile(Path file, Path rootPath, Config config) {
-        String name = file.getFileName().toString();
-        String rel = relativizeSafe(rootPath, file);
-
-        // If exclude mode active, include everything not excluded (already filtered in shouldIgnore)
-        boolean excludeMode = !config.getExcludeExtensions().isEmpty() || !config.getExcludeNamesOrPaths().isEmpty();
-        if (excludeMode) return true;
-
-        // If include lists empty, include all
-        boolean hasInclude = !config.getIncludeExtensions().isEmpty() || !config.getIncludeNamesOrPaths().isEmpty();
-        if (!hasInclude) return true;
-
-        // Include if matches include rules
-        if (matchesNameOrPath(rel, name, config.getIncludeNamesOrPaths())) return true;
-        String ext = extensionOf(name);
-        return !ext.isEmpty() && config.getIncludeExtensions().contains(ext);
-    }
-
-    private static boolean matchesNameOrPath(String relativePath, String name, Set<String> patterns) {
-        if (patterns == null || patterns.isEmpty()) return false;
-        if (patterns.contains(name)) return true;
-        String rel = relativePath; // already '/' normalized by relativizeSafe
-        if (patterns.contains(rel)) return true;
-        for (String p : patterns) {
-            if (p == null || p.isEmpty()) continue;
-            String norm = p.replace("\\", "/");
-            if (rel.equals(norm)) return true;
-            if (rel.startsWith(norm.endsWith("/") ? norm : norm + "/")) return true;
-        }
-        return false;
-    }
-
-    private static String relativizeSafe(Path root, Path path) {
-        try {
-            return root.relativize(path.toAbsolutePath().normalize()).toString().replace("\\", "/");
-        } catch (Exception e) {
-            return path.getFileName().toString();
-        }
-    }
-
-    private static String extensionOf(String fileName) {
-        int idx = fileName.lastIndexOf('.');
-        return idx >= 0 ? fileName.substring(idx).toLowerCase() : "";
     }
 }
