@@ -28,7 +28,7 @@ public class Installer {
 
     private static Path detectExecutableJar() {
         try {
-            var codeSource = ProjectAnalyzer.class.getProtectionDomain().getCodeSource();
+            var codeSource = Ctxgen.class.getProtectionDomain().getCodeSource();
             if (codeSource != null) {
                 Path loc = Paths.get(codeSource.getLocation().toURI());
                 if (loc.toString().toLowerCase().endsWith(".jar")) {
@@ -165,4 +165,3 @@ public class Installer {
         } catch (UnsupportedOperationException ignored) { }
     }
 }
-

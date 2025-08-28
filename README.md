@@ -24,30 +24,33 @@ This Java tool analyzes a project directory, generating a single Markdown file (
 Option A — one‑shot installer (recommended):
 
 ```bash
-java -jar target/context-1.0-SNAPSHOT.jar --install
+java -jar target/ctxgen-2.0.jar --install
 ```
 
 This creates a `ctxgen` launcher:
 - Windows: installs `ctxgen.cmd` into a PATH directory (or `%USERPROFILE%\bin`). PowerShell будет резолвить `.cmd` корректно без изменения ExecutionPolicy.
 - Linux/macOS: installs to `/usr/local/bin/ctxgen` or falls back to `~/.local/bin/ctxgen` (ensure it’s on PATH).
 
-Option B — run the JAR directly: download the latest release and use `java -jar /path/to/context.jar`.
+Option B — run the JAR directly: download the latest release and use `java -jar /path/to/ctxgen.jar`.
 
 ### Usage
 
 Open a terminal or command prompt.
 
 1.  **Navigate** to the root directory of the project you want to analyze, or prepare to specify the path.
-2.  **Run the tool:**
+2.  **Run the tool (commands):**
     ```bash
-    # Installed launcher (after --install)
-    ctxgen --config     # generate default config in current folder
-    ctxgen              # analyze current directory
-    ctxgen /path/to/project
+    ctxgen --help                 # show help
+    ctxgen --install              # install launcher into PATH
+    ctxgen --config               # create default context_config.yaml in current folder
+    ctxgen --gen [path]           # generate project_structure.md for current or given path
+    ctxgen --save <name>          # save ./context_config.yaml as named profile
+    ctxgen --use <name> [path]    # use named profile; also writes ./context_config.yaml
+    ctxgen --list                 # list saved profiles
+    ctxgen --delete <name>        # delete saved profile
 
     # Or via JAR directly
-    java -jar /path/to/context.jar
-    java -jar /path/to/context.jar /path/to/your/project/directory
+    java -jar /path/to/ctxgen.jar --gen [path]
     ```
 
 #### Profiles (save and reuse configs)
@@ -65,12 +68,12 @@ Open a terminal or command prompt.
   - `ctxgen --delete php`
 3.  **(Optional) Generate a default configuration file:**
     ```bash
-    java -jar /path/to/context.jar --config
+    java -jar /path/to/ctxgen.jar --config
     ```
     This creates a `context_config.yaml` file in the current directory with default settings and comments explaining how to configure the tool. Edit this file to customize which files are included or excluded.
 4.  **Re-run the analysis** (after creating/editing `context_config.yaml`) to apply your configuration:
     ```bash
-    java -jar /path/to/context.jar
+    java -jar /path/to/ctxgen.jar
     ```
 5.  **Check the output:** After running, a file named `project_structure.md` will be created in the root of the analyzed project directory.
 
@@ -112,4 +115,4 @@ Run the Maven command:
     mvn clean package
 ```
 
-The compiled JAR file will be located in the target/ directory (e.g., target/context-1.0-SNAPSHOT.jar).
+The compiled JAR file will be located in the target/ directory (e.g., target/ctxgen-2.0.jar).

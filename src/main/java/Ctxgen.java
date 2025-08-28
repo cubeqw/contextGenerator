@@ -7,10 +7,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
 
-public class ProjectAnalyzer {
+public class Ctxgen {
 
     private static final String OUTPUT_FILENAME = "project_structure.md";
     private static final String CONFIG_FILENAME = "context_config.yaml";
+    private static final String VERSION = "2.0";
 
     private static void createDefaultConfigV2() {
         try (FileWriter writer = new FileWriter(CONFIG_FILENAME)) {
@@ -45,13 +46,27 @@ public class ProjectAnalyzer {
     }
 
     public static void main(String[] args) {
-        if (args.length > 0 && "--config".equalsIgnoreCase(args[0])) {
+        // Normalize primary command (support aliases)
+        String cmd = args.length > 0 ? normalize(args[0]) : "--help";
+
+        // Help/version
+        if ("--version".equalsIgnoreCase(cmd) || "-v".equalsIgnoreCase(cmd)) {
+            System.out.println("ctxgen " + resolveVersion());
+            return;
+        }
+
+        if (args.length == 0 || "--help".equalsIgnoreCase(cmd)) {
+            printHelp();
+            return;
+        }
+
+        if ("--config".equalsIgnoreCase(cmd)) {
             createDefaultConfigV2();
             System.out.println("Configuration file '" + CONFIG_FILENAME + "' created.");
             return;
         }
 
-        if (args.length > 0 && "--install".equalsIgnoreCase(args[0])) {
+        if ("--install".equalsIgnoreCase(cmd)) {
             boolean ok = Installer.performInstall();
             if (ok) {
                 System.out.println("Installed launcher 'ctxgen'. Try: ctxgen --config");
@@ -62,7 +77,7 @@ public class ProjectAnalyzer {
         }
 
         // List saved profiles
-        if (args.length > 0 && "--list".equalsIgnoreCase(args[0])) {
+        if ("--list".equalsIgnoreCase(cmd)) {
             var profiles = ConfigStore.listProfiles();
             if (profiles.isEmpty()) {
                 System.out.println("No profiles saved. Create one with: ctxgen --save <name>");
@@ -74,14 +89,14 @@ public class ProjectAnalyzer {
         }
 
         // Delete saved profile
-        if (args.length > 1 && "--delete".equalsIgnoreCase(args[0])) {
+        if (args.length > 1 && "--delete".equalsIgnoreCase(cmd)) {
             String name = args[1];
             ConfigStore.deleteProfile(name);
             return;
         }
 
         // Save named profile from current context_config.yaml
-        if (args.length > 1 && "--save".equalsIgnoreCase(args[0])) {
+        if (args.length > 1 && "--save".equalsIgnoreCase(cmd)) {
             String name = args[1];
             boolean ok = ConfigStore.saveFrom(Paths.get(CONFIG_FILENAME), name);
             if (!ok) {
@@ -90,11 +105,11 @@ public class ProjectAnalyzer {
             return;
         }
 
-        // Use named profile for this run
+        // Use named profile for this run (and write it locally)
         AnalyzerConfig config = null;
         String profileName = null;
         int argIndex = 0;
-        if (args.length > 1 && "--use".equalsIgnoreCase(args[0])) {
+        if (args.length > 1 && "--use".equalsIgnoreCase(cmd)) {
             profileName = args[1];
             config = ConfigStore.loadNamed(profileName);
             if (config == null) {
@@ -110,6 +125,19 @@ public class ProjectAnalyzer {
                 System.out.println("Profile loaded, but failed to copy to ./" + CONFIG_FILENAME + ": " + e.getMessage());
             }
             argIndex = 2; // optional path may follow
+        }
+
+        // Explicit generation command using current local config
+        boolean doGen = false;
+        if (profileName != null) {
+            doGen = true; // --use triggers generation
+        } else if ("--gen".equalsIgnoreCase(cmd)) {
+            doGen = true;
+            argIndex = 1; // optional path after --gen
+        } else {
+            // Unknown or missing command: show help
+            printHelp();
+            return;
         }
 
         if (config == null) {
@@ -156,6 +184,49 @@ public class ProjectAnalyzer {
             System.err.println("An error occurred during analysis: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private static void printHelp() {
+        System.out.println("ctxgen — project context generator (v" + resolveVersion() + ")");
+        System.out.println();
+        System.out.println("Usage:");
+        System.out.println("  ctxgen --help  | -h                   Show this help");
+        System.out.println("  ctxgen --version | -v                 Show version");
+        System.out.println("  ctxgen --install | -i                 Install 'ctxgen' launcher into PATH");
+        System.out.println("  ctxgen --config  | -c                 Create default context_config.yaml in current directory");
+        System.out.println("  ctxgen --gen [path] | -g [path]       Generate project_structure.md for current or given path");
+        System.out.println("  ctxgen --save <name> | -s <name>      Save ./context_config.yaml as named profile");
+        System.out.println("  ctxgen --use <name> [path] | -u       Use profile for generation; also writes ./context_config.yaml");
+        System.out.println("  ctxgen --list | -l                    List saved profiles");
+        System.out.println("  ctxgen --delete <name> | -d <name>    Delete saved profile");
+        System.out.println();
+        System.out.println("Notes:");
+        System.out.println("  - Exclude lists take precedence over include lists in config.");
+        System.out.println("  - Profiles are stored per-user (APPDATA/Library/.config).");
+    }
+
+    private static String normalize(String arg0) {
+        if (arg0 == null) return "--help";
+        switch (arg0) {
+            case "-h": return "--help";
+            case "-v": return "--version";
+            case "-i": return "--install";
+            case "-c": return "--config";
+            case "-g": return "--gen";
+            case "-s": return "--save";
+            case "-u": return "--use";
+            case "-l": return "--list";
+            case "-d": return "--delete";
+            default: return arg0;
+        }
+    }
+
+    private static String resolveVersion() {
+        try {
+            String impl = Ctxgen.class.getPackage().getImplementationVersion();
+            if (impl != null && !impl.isBlank()) return impl;
+        } catch (Exception ignored) {}
+        return VERSION;
     }
 
     private static AnalyzerConfig loadConfig() {
