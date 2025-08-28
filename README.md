@@ -28,7 +28,7 @@ java -jar target/ctxgen-2.0.jar --install
 ```
 
 This creates a `ctxgen` launcher:
-- Windows: installs `ctxgen.cmd` into a PATH directory (or `%USERPROFILE%\bin`). PowerShell будет резолвить `.cmd` корректно без изменения ExecutionPolicy.
+- Windows: writes `ctxgen.cmd` next to the JAR (same folder) and attempts to add that folder to your user PATH automatically (new terminals will pick it up).
 - Linux/macOS: installs to `/usr/local/bin/ctxgen` or falls back to `~/.local/bin/ctxgen` (ensure it’s on PATH).
 
 Option B — run the JAR directly: download the latest release and use `java -jar /path/to/ctxgen.jar`.

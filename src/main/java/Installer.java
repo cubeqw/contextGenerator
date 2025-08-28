@@ -37,20 +37,30 @@ public class Installer {
             }
         } catch (Exception ignored) { }
 
-        // Fallback: look for a built jar in target/
-        try {
-            Path target = Paths.get("target");
-            if (Files.isDirectory(target)) {
-                try (DirectoryStream<Path> ds = Files.newDirectoryStream(target, "*.jar")) {
-                    Path first = null;
-                    for (Path p : ds) {
-                        if (p.getFileName().toString().startsWith("context-")) return p.toAbsolutePath().normalize();
-                        if (first == null) first = p;
+        // Fallback: look for a built jar in common output directories
+        Path[] candidates = new Path[] {
+                Paths.get("target"),
+                Paths.get("out", "artifacts", "ctxgen_jar"),
+                Paths.get("out", "artifacts", "context_jar")
+        };
+        for (Path dir : candidates) {
+            try {
+                if (Files.isDirectory(dir)) {
+                    Path preferred = null, legacy = null, first = null;
+                    try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.jar")) {
+                        for (Path p : ds) {
+                            String fn = p.getFileName().toString();
+                            if (fn.startsWith("ctxgen-")) { preferred = p; break; }
+                            if (legacy == null && fn.startsWith("context-")) legacy = p;
+                            if (first == null) first = p;
+                        }
                     }
+                    if (preferred != null) return preferred.toAbsolutePath().normalize();
+                    if (legacy != null) return legacy.toAbsolutePath().normalize();
                     if (first != null) return first.toAbsolutePath().normalize();
                 }
-            }
-        } catch (IOException ignored) { }
+            } catch (IOException ignored) { }
+        }
         return null;
     }
 
@@ -60,37 +70,9 @@ public class Installer {
                 "java -jar \"" + jarPath.toString() + "\" %*\r\n" +
                 "endlocal\r\n";
 
-        String pathEnv = System.getenv("PATH");
-        Path chosenDir = null;
-        if (pathEnv != null) {
-            String[] dirs = pathEnv.split(Pattern.quote(File.pathSeparator));
-            for (String d : dirs) {
-                try {
-                    if (d == null || d.isBlank()) continue;
-                    Path dir = Paths.get(d.trim());
-                    if (!Files.isDirectory(dir)) continue;
-                    Path test = dir.resolve(".ctxgen_write_test.tmp");
-                    try {
-                        Files.writeString(test, "ok", StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-                        Files.deleteIfExists(test);
-                        chosenDir = dir;
-                        break;
-                    } catch (Exception ignored) { }
-                } catch (Exception ignored) { }
-            }
-        }
-
-        Path installDir;
-        boolean onPath;
-        if (chosenDir != null) {
-            installDir = chosenDir;
-            onPath = true;
-        } else {
-            installDir = Paths.get(System.getProperty("user.home"), "bin");
-            try { Files.createDirectories(installDir); } catch (IOException ignored) {}
-            onPath = pathEnv != null && Arrays.stream(pathEnv.split(Pattern.quote(File.pathSeparator)))
-                    .map(String::trim).anyMatch(p -> p.equalsIgnoreCase(installDir.toString()));
-        }
+        // Install next to the JAR (preferred behavior on Windows)
+        Path installDir = jarPath.getParent();
+        if (installDir == null) installDir = Paths.get(".").toAbsolutePath().normalize();
 
         Path cmd = installDir.resolve("ctxgen.cmd");
         try {
@@ -100,18 +82,26 @@ public class Installer {
             return false;
         }
 
-        if (!onPath) {
-            try {
-                String newPath = (pathEnv == null || pathEnv.isBlank()) ? installDir.toString() : pathEnv + File.pathSeparator + installDir;
-                new ProcessBuilder("cmd", "/c", "setx", "PATH", newPath).inheritIO().start().waitFor();
-                System.out.println("Added to PATH for future sessions: " + installDir);
-                System.out.println("Restart terminal or log out/in for changes to take effect.");
-            } catch (Exception e) {
-                System.out.println("Place added: " + installDir + ". If not on PATH, add it manually in Environment Variables.");
-            }
-        }
-
         System.out.println("Windows install complete: " + cmd);
+        // Try to add folder to user PATH if missing
+        try {
+            String pathEnv = System.getenv("PATH");
+            String dirStr = installDir.toString();
+            boolean onPath = pathEnv != null && Arrays.stream(pathEnv.split(Pattern.quote(File.pathSeparator)))
+                    .map(String::trim)
+                    .anyMatch(p -> p.equalsIgnoreCase(dirStr));
+            if (!onPath) {
+                String newPath = (pathEnv == null || pathEnv.isBlank()) ? dirStr : pathEnv + File.pathSeparator + dirStr;
+                new ProcessBuilder("cmd", "/c", "setx", "PATH", newPath)
+                        .inheritIO()
+                        .start()
+                        .waitFor();
+                System.out.println("Added to PATH for future sessions: " + dirStr);
+                System.out.println("Restart terminal or log out/in for changes to take effect.");
+            }
+        } catch (Exception e) {
+            System.out.println("Could not update PATH automatically. Add to PATH manually: " + installDir);
+        }
         return true;
     }
 
